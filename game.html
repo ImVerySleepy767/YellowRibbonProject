@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STEAMunity: Second Chances</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- GLOBAL & TYPOGRAPHY --- */
+        :root {
+            --bg-color: #0a0a0a;
+            --container-bg: #1a1a1a;
+            --text-main: #e0e0e0;
+            --accent-good: #2ecc71;
+            --accent-bad: #e74c3c;
+            --accent-neutral: #f1c40f;
+            --ui-border: #444;
+        }
+
+        body {
+            font-family: 'VT323', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            user-select: none;
+        }
+
+        .game-wrapper {
+            width: 100%;
+            max-width: 900px;
+            background-color: var(--container-bg);
+            border: 4px solid var(--ui-border);
+            box-shadow: 0 0 30px rgba(0,0,0,0.9);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* --- HUD / STATS BAR --- */
+        .stats-hud {
+            display: flex;
+            justify-content: space-between;
+            background-color: #000;
+            padding: 10px 20px;
+            border-bottom: 2px solid var(--ui-border);
+            z-index: 50;
+            position: relative;
+        }
+
+        .stat-block { width: 22%; text-align: center; }
+        .stat-label { font-size: 18px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-value { font-size: 26px; font-weight: bold; margin: 4px 0; transition: color 0.3s; }
+        .stat-bar-bg { width: 100%; height: 12px; background-color: #222; border: 1px solid #555; }
+        .stat-bar-fill { height: 100%; transition: width 0.4s ease, background-color 0.4s ease; }
+
+        /* --- SCENE SYSTEM --- */
+        .scene { display: none; }
+        .scene.active { display: block; animation: fadeIn 0.5s ease-in; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* --- VISUAL VIEWPORT (The FNAF Room Style) --- */
+        .viewport {
+            position: relative;
+            width: 100%;
+            height: 350px;
+            background-color: #2c3e50; /* Base fallback */
+            border-bottom: 2px solid var(--ui-border);
+            image-rendering: pixelated;
+            overflow: hidden;
+        }
+
+        .room-halfway { background: linear-gradient(to bottom, #1a252c, #34495e); }
+        .room-warehouse { background: linear-gradient(to bottom, #2c3e50, #7f8c8d); }
+        .room-street { background: linear-gradient(to bottom, #2980b9, #2c3e50); }
+
+        .vignette {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 30%, rgba(0,0,0,0.95) 100%);
+            pointer-events: none; z-index: 10;
+        }
+
+        .scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.15));
+            background-size: 100% 4px;
+            pointer-events: none; z-index: 11;
+        }
+
+        /* --- CLICKABLE ENTITIES --- */
+        .interactable {
+            position: absolute; cursor: pointer; transition: transform 0.1s; z-index: 5;
+            box-shadow: inset 0 0 0 2px rgba(255,255,255,0.2);
+        }
+        .interactable:hover {
+            transform: scale(1.05); filter: drop-shadow(0 0 10px rgba(255,255,255,0.8));
+        }
+        .interactable::after {
+            position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
+            color: #fff; font-size: 18px; text-shadow: 1px 1px 0 #000; white-space: nowrap;
+        }
+
+        /* Halfway House Entities */
+        .ent-bed { width: 180px; height: 80px; background: #34495e; bottom: 20px; left: 40px; border-radius: 5px; border-top: 10px solid #2c3e50;}
+        .ent-bed::after { content: 'Your Bed'; }
+        
+        .ent-kumar { width: 50px; height: 130px; background: #e67e22; bottom: 60px; right: 200px; border-radius: 25px 25px 0 0;}
+        .ent-kumar::after { content: 'Kumar (Resident)'; }
+        
+        .ent-board { width: 100px; height: 70px; background: #c0392b; top: 50px; left: 350px; border: 3px solid #7f8c8d;}
+        .ent-board::after { content: 'Notice Board'; }
+
+        /* Warehouse Entities */
+        .ent-manager { width: 60px; height: 140px; background: #8e44ad; bottom: 50px; left: 150px; border-radius: 10px 10px 0 0;}
+        .ent-manager::after { content: 'Manager'; }
+
+        .ent-work { width: 300px; height: 100px; background: #7f8c8d; bottom: 10px; right: 50px; border-top: 10px dashed #bdc3c7;}
+        .ent-work::after { content: 'Packing Station'; }
+
+        /* Street Entities */
+        .ent-store { width: 150px; height: 180px; background: #16a085; bottom: 50px; left: 80px; border: 4px solid #fff;}
+        .ent-store::after { content: 'Convenience Store'; }
+
+        .ent-cafe { width: 120px; height: 150px; background: #d35400; bottom: 50px; right: 250px; border-radius: 10px 10px 0 0;}
+        .ent-cafe::after { content: 'Local Cafe'; }
+
+        .ent-bus { width: 80px; height: 100px; background: #2c3e50; bottom: 20px; right: 40px; border-top: 5px solid #f1c40f;}
+        .ent-bus::after { content: 'Bus Stop (Go Home)'; }
+
+        /* --- DIALOGUE UI --- */
+        .dialogue-panel {
+            background-color: #050505; height: 280px; padding: 25px; box-sizing: border-box;
+            position: relative; z-index: 15; display: flex; flex-direction: column;
+        }
+        .text-box { flex-grow: 1; overflow-y: auto; font-size: 24px; line-height: 1.4; margin-bottom: 15px; }
+        .text-box strong { color: var(--accent-neutral); }
+        .choices-box { display: flex; flex-direction: column; gap: 8px; }
+        
+        button.btn {
+            font-family: 'VT323', monospace; font-size: 22px; background: #222; color: #fff;
+            border: 2px solid #555; padding: 12px; cursor: pointer; text-align: left;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        button.btn:hover { background: #333; border-color: #fff; }
+        button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* --- PURE STORY SCENE (No Visuals) --- */
+        .story-container { padding: 40px; height: 630px; background: #111; overflow-y: auto; box-sizing: border-box;}
+        .story-title { font-size: 36px; color: var(--accent-neutral); margin-top: 0; border-bottom: 2px solid #333; padding-bottom: 10px;}
+        .story-text { font-size: 26px; line-height: 1.5; margin-bottom: 20px; }
+        .reflection-box { background: rgba(46, 204, 113, 0.1); border-left: 4px solid var(--accent-good); padding: 15px; margin: 20px 0; font-style: italic; }
+
+        /* --- CHARACTER SELECTION --- */
+        .char-grid { display: flex; gap: 20px; margin-top: 30px; }
+        .char-card {
+            background: #222; border: 2px solid #444; padding: 20px; flex: 1; cursor: pointer;
+            transition: all 0.2s; text-align: center;
+        }
+        .char-card:hover { transform: translateY(-5px); border-color: var(--accent-neutral); background: #2a2a2a; }
+        .char-name { font-size: 32px; color: var(--accent-neutral); margin-bottom: 10px; }
+        .char-desc { font-size: 20px; line-height: 1.3; color: #bbb; }
+
+        /* --- POPUPS --- */
+        .phone-overlay {
+            display: none; position: absolute; top: 5%; left: 50%; transform: translateX(-50%);
+            width: 320px; max-height: 90%; background: #e0e0e0; border: 12px solid #111; border-radius: 20px;
+            z-index: 100; color: #111; box-shadow: 0 0 50px rgba(0,0,0,0.9); flex-direction: column;
+            animation: slideUp 0.4s ease-out;
+        }
+        @keyframes slideUp { from { top: 100%; } to { top: 5%; } }
+        
+        /* Glitch Animation for Burnout */
+        @keyframes glitch {
+            0% { transform: translate(0) }
+            20% { transform: translate(-5px, 5px) }
+            40% { transform: translate(-5px, -5px) }
+            60% { transform: translate(5px, 5px) }
+            80% { transform: translate(5px, -5px) }
+            100% { transform: translate(0) }
+        }
+        .screen-glitch { animation: glitch 0.3s infinite; filter: hue-rotate(90deg) contrast(200%); }
+
+        .phone-header { background: #27ae60; color: #fff; padding: 10px; text-align: center; font-size: 24px; border-radius: 5px 5px 0 0; flex-shrink: 0; }
+        .phone-body { padding: 15px; font-size: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+        .msg-bubble { background: #fff; padding: 15px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 10px; flex-shrink: 0; }
+        .btn-phone { font-family: 'VT323'; width: 100%; padding: 10px; margin-top: 8px; font-size: 22px; cursor: pointer; border: 2px solid #111; background: #fff; flex-shrink: 0; }
+        .btn-phone:hover { background: #ddd; }
+        .btn-phone.danger { background: var(--accent-bad); color: #fff; }
+
+        .achievement-toast {
+            position: absolute; bottom: -100px; right: 20px; background: #f39c12; color: #000;
+            padding: 15px 25px; border-radius: 5px; font-size: 24px; font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); z-index: 100; transition: bottom 0.5s;
+        }
+        .show-toast { bottom: 20px; }
+
+        /* Helpers */
+        .color-good { color: var(--accent-good); }
+        .color-bad { color: var(--accent-bad); }
+    </style>
+</head>
+<body>
+
+<div class="game-wrapper">
+    <!-- STATS HUD (Always Visible during gameplay) -->
+    <div class="stats-hud" id="hud" style="display: none;">
+        <div class="stat-block">
+            <div class="stat-label">Money</div>
+            <div class="stat-value" id="ui-money">$0</div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="bar-money" style="background: #2ecc71; width: 0%;"></div></div>
+        </div>
+        <div class="stat-block">
+            <div class="stat-label">Happiness</div>
+            <div class="stat-value" id="ui-happy">0%</div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="bar-happy" style="background: #3498db; width: 0%;"></div></div>
+        </div>
+        <div class="stat-block">
+            <div class="stat-label">Fam. Trust</div>
+            <div class="stat-value" id="ui-fam">0%</div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="bar-fam" style="background: #f1c40f; width: 0%;"></div></div>
+        </div>
+        <div class="stat-block">
+            <div class="stat-label">Com. Trust</div>
+            <div class="stat-value" id="ui-com">0%</div>
+            <div class="stat-bar-bg"><div class="stat-bar-fill" id="bar-com" style="background: #9b59b6; width: 0%;"></div></div>
+        </div>
+    </div>
+
+    <!-- SCENE 0: INTRO / CHAR SELECT -->
+    <div id="scene-intro" class="scene active story-container">
+        <h1 class="story-title" style="text-align: center; font-size: 48px;">STEAMunity: Second Chances</h1>
+        <p class="story-text" style="text-align: center;">Based on real experiences from the Yellow Ribbon Project.</p>
+        <p class="story-text">Reintegrating into society is more than just walking out of the gates. It is navigating an invisible web of stigma, financial pressure, and broken trust.</p>
+        
+        <h2 style="margin-top: 40px;">Choose Who To Be:</h2>
+        <div class="char-grid">
+            <div class="char-card" onclick="startGame('maya')">
+                <div class="char-name">Maya (29)</div>
+                <div class="char-desc">Drug offenses. Struggles heavily with confidence and mental health. Has visible tattoos.<br><br><span class="color-good">High Empathy</span><br><span class="color-bad">Low Confidence</span></div>
+            </div>
+            <div class="char-card" onclick="startGame('marcus')">
+                <div class="char-name">Marcus (32)</div>
+                <div class="char-desc">Former gang member. Good at interviews but family trust is completely shattered.<br><br><span class="color-good">Resilient</span><br><span class="color-bad">High Relapse Risk</span></div>
+            </div>
+            <div class="char-card" onclick="startGame('sara')">
+                <div class="char-name">Sara (26)</div>
+                <div class="char-desc">First-time white-collar offender. No tattoos, but employers judge her fiercely.<br><br><span class="color-good">Starts with Savings</span><br><span class="color-bad">Invisible Stigma</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCENE 1: VISUAL ROOM -->
+    <div id="scene-visual" class="scene">
+        <div class="viewport" id="room-viewport">
+            <div class="vignette"></div>
+            <div class="scanlines"></div>
+            <div id="room-entities">
+                <!-- Javascript will inject clickable items here -->
+            </div>
+            
+            <!-- SMARTPHONE POPUP -->
+            <div class="phone-overlay" id="ui-phone">
+                <div class="phone-header">New Message</div>
+                <div class="phone-body">
+                    <div class="msg-bubble">
+                        <strong>From: Unknown</strong><br><br>
+                        "Eh heard u got out. Come hang at the old spot tonight. Got a fast job for u. Easy cash. Don't ghost me."
+                    </div>
+                    <button class="btn-phone danger" onclick="handlePhone('block')">Block Number</button>
+                    <button class="btn-phone" onclick="handlePhone('reply')">Reply: "Just to catch up"</button>
+                </div>
+            </div>
+        </div>
+        <div class="dialogue-panel">
+            <div class="text-box" id="visual-text"></div>
+            <div class="choices-box" id="visual-choices"></div>
+        </div>
+    </div>
+
+    <!-- SCENE 2: PURE NARRATIVE (For Crises and Stigma) -->
+    <div id="scene-narrative" class="scene story-container">
+        <h2 class="story-title" id="story-title">Title</h2>
+        <div class="story-text" id="story-text">Story text goes here...</div>
+        <div class="choices-box" id="story-choices" style="margin-top: 30px;"></div>
+    </div>
+
+    <!-- ACHIEVEMENT TOAST -->
+    <div class="achievement-toast" id="toast">🏆 Achievement Unlocked!</div>
+</div>
+
+<script>
+    /* =========================================================
+       1. GAME ENGINE & STATE MANAGEMENT
+       ========================================================= */
+    const state = {
+        char: null,
+        money: 0, happy: 0, famTrust: 0, comTrust: 0,
+        hasTattoos: false,
+        shiftsWorked: 0,
+        phoneTriggered: false,
+        mallVisited: { store: false, cafe: false }
+    };
+
+    const characters = {
+        maya: { money: 30, happy: 30, famTrust: 40, comTrust: 10, tattoos: true },
+        marcus: { money: 60, happy: 50, famTrust: 15, comTrust: 10, tattoos: true },
+        sara: { money: 120, happy: 60, famTrust: 50, comTrust: 0, tattoos: false }
+    };
+
+    function updateStats(m, h, f, c) {
+        state.money += m; state.happy += h; state.famTrust += f; state.comTrust += c;
+        
+        // Clamp values
+        state.money = Math.max(0, state.money);
+        state.happy = Math.max(0, Math.min(100, state.happy));
+        state.famTrust = Math.max(0, Math.min(100, state.famTrust));
+        state.comTrust = Math.max(0, Math.min(100, state.comTrust));
+
+        // Format UI
+        document.getElementById('ui-money').innerText = "$" + state.money;
+        document.getElementById('ui-happy').innerText = state.happy + "%";
+        document.getElementById('ui-fam').innerText = state.famTrust + "%";
+        document.getElementById('ui-com').innerText = state.comTrust + "%";
+
+        // Progress Bars (Money assumed max $300 for bar scale)
+        document.getElementById('bar-money').style.width = Math.min((state.money/300)*100, 100) + "%";
+        document.getElementById('bar-happy').style.width = state.happy + "%";
+        document.getElementById('bar-fam').style.width = state.famTrust + "%";
+        document.getElementById('bar-com').style.width = state.comTrust + "%";
+
+        // Color coding logic
+        document.getElementById('ui-happy').style.color = state.happy < 30 ? 'var(--accent-bad)' : 'var(--text-main)';
+        document.getElementById('ui-fam').style.color = state.famTrust < 30 ? 'var(--accent-bad)' : 'var(--text-main)';
+    }
+
+    function switchScene(sceneId) {
+        document.querySelectorAll('.scene').forEach(el => el.classList.remove('active'));
+        document.getElementById(sceneId).classList.add('active');
+    }
+
+    function showToast(text) {
+        const toast = document.getElementById('toast');
+        toast.innerText = "🏆 " + text;
+        toast.classList.add('show-toast');
+        setTimeout(() => toast.classList.remove('show-toast'), 3500);
+    }
+
+    /* =========================================================
+       2. START GAME & INITIALIZATION
+       ========================================================= */
+    function startGame(charKey) {
+        state.char = charKey;
+        const c = characters[charKey];
+        state.hasTattoos = c.tattoos;
+        
+        document.getElementById('hud').style.display = 'flex';
+        updateStats(c.money, c.happy, c.famTrust, c.comTrust);
+        showToast("Journey Begun");
+        
+        loadHalfwayHouse();
+    }
+
+    /* =========================================================
+       3. VISUAL ROOMS LOGIC (Halfway House, Warehouse, Street)
+       ========================================================= */
+    function renderVisualRoom(roomClass, entitiesHTML, text, choicesHTML) {
+        switchScene('scene-visual');
+        const vp = document.getElementById('room-viewport');
+        vp.className = "viewport " + roomClass;
+        document.getElementById('room-entities').innerHTML = entitiesHTML;
+        setVisualDialogue(text, choicesHTML);
+    }
+
+    function setVisualDialogue(text, choicesHTML) {
+        document.getElementById('visual-text').innerHTML = text;
+        document.getElementById('visual-choices').innerHTML = choicesHTML;
+    }
+
+    // --- LEVEL 1: Halfway House ---
+    function loadHalfwayHouse() {
+        const ents = `
+            <div class="interactable ent-bed" onclick="actHH('bed')"></div>
+            <div class="interactable ent-kumar" onclick="actHH('kumar')"></div>
+            <div class="interactable ent-board" onclick="actHH('board')"></div>
+        `;
+        renderVisualRoom('room-halfway', ents, 
+            "You are placed in a government halfway house. It smells of floor wax and stale smoke. The anxiety in your chest is heavy.<br><br><strong>Click on objects to interact.</strong>", 
+            ""
+        );
+    }
+
+    function actHH(target) {
+        if(target === 'bed') {
+            setVisualDialogue("The thin mattress calls to you. It would be so easy to just hide under the covers and avoid the world today.", 
+                `<button class="btn" onclick="updateStats(0,-10,0,0); loadHalfwayHouse();"><span class="color-bad">-10 Happy:</span> Hide in bed</button>
+                 <button class="btn" onclick="loadHalfwayHouse()">Step away</button>`
+            );
+        } else if (target === 'kumar') {
+            setVisualDialogue("<strong>Kumar:</strong> 'Rough night? People look at us differently out there. But we can't let it break us.'", 
+                `<button class="btn" onclick="updateStats(0,10,0,15); loadHalfwayHouse(); showToast('Community Builder');"><span class="color-good">+Trust:</span> Open up to him</button>
+                 <button class="btn" onclick="loadHalfwayHouse()">Nod politely</button>`
+            );
+        } else if (target === 'board') {
+            setVisualDialogue("A flyer for a warehouse packing job. <em>'Background check required.'</em>",
+                `<button class="btn" onclick="loadWarehouse()">Apply and travel to Warehouse</button>`
+            );
+        }
+    }
+
+    // --- LEVEL 2: The Warehouse (Grind, Burnout & Phone) ---
+    function loadWarehouse() {
+        const ents = `
+            <div class="interactable ent-manager" onclick="actWH('manager')"></div>
+            <div class="interactable ent-work" onclick="actWH('work')"></div>
+        `;
+        
+        // Remove glitch if we had a burnout
+        document.getElementById('room-viewport').classList.remove('screen-glitch');
+        
+        renderVisualRoom('room-warehouse', ents, 
+            "The warehouse is loud and dusty. You need this job to pay for rent and food.", 
+            ""
+        );
+    }
+
+    function actWH(target) {
+        if(target === 'manager') {
+            setVisualDialogue("<strong>Manager:</strong> 'Less talking, more packing. I took a risk hiring you. Don't make me regret it.'", 
+                `<button class="btn" onclick="loadWarehouse()">Walk away</button>`
+            );
+        } else if (target === 'work') {
+            setVisualDialogue("The packing station. It's grueling, physical labor.",
+                `<button class="btn" onclick="doWork()">Work Shift (Earn $30, Lose 10% Happiness)</button>`
+            );
+        }
+    }
+
+    function doWork() {
+        // Pre-check for Burnout
+        if (state.happy <= 0) {
+            triggerBurnout();
+            return;
+        }
+
+        state.shiftsWorked++;
+        updateStats(30, -10, 0, 0); // Earn money, lose happiness
+        
+        // Check for Burnout immediately after working
+        if (state.happy <= 0) {
+            triggerBurnout();
+            return;
+        }
+        
+        if (state.shiftsWorked === 2 && !state.phoneTriggered) {
+            state.phoneTriggered = true;
+            document.getElementById('ui-phone').style.display = 'flex';
+            setVisualDialogue("<span class='color-bad' style='animation: fadeIn 0.2s infinite alternate;'>*BZZZT. BZZZT.* Your phone is vibrating.</span>", "");
+        } else if (state.shiftsWorked >= 4) {
+            loadStreet(); // Move to Act 3: Public Stigma
+        } else {
+            setVisualDialogue(`You packed boxes until your hands blistered. You earned $30. <em>(Shifts: ${state.shiftsWorked}/4)</em>`,
+                `<button class="btn" onclick="loadWarehouse()">Take a breath</button>`
+            );
+        }
+    }
+
+    function triggerBurnout() {
+        // Visual effect for mental breakdown
+        document.getElementById('room-viewport').classList.add('screen-glitch');
+        
+        // Penalize player heavily for ignoring mental health
+        updateStats(-20, 20, -15, -15); // Lose money (docked pay), gain 20 happy (forced rest), lose trust
+        state.shiftsWorked++; // Increment shift so they don't get soft-locked
+        
+        setDialogue("<span class='color-bad'><strong>MENTAL BURNOUT</strong></span><br><br>You pushed your exhausted mind too far. You snap at a coworker, drop a fragile box, and break down. The manager docks your pay by $20 and sends you home to rest.",
+            `<button class="btn" onclick="loadWarehouse()">Return tomorrow (Recovered 20% Happiness)</button>`
+        );
+        showToast("Mental Breakdown");
+    }
+
+    function handlePhone(action) {
+        document.getElementById('ui-phone').style.display = 'none';
+        if (action === 'block') {
+            updateStats(0, -15, 10, 10);
+            setVisualDialogue("You blocked the number. The loneliness aches, but you know old circles lead to old cells.",
+                `<button class="btn" onclick="loadWarehouse()">Return to work</button>`
+            );
+            showToast("Clean Break");
+        } else {
+            updateStats(0, 10, -20, -20);
+            setVisualDialogue("You texted back. The manager notices you distracted and glares at you. Trust is fragile.",
+                `<button class="btn" onclick="loadWarehouse()">Put phone away</button>`
+            );
+        }
+    }
+
+    // --- LEVEL 3: The Public Street (Everyday Stigma) ---
+    function loadStreet() {
+        const ents = `
+            <div class="interactable ent-store" onclick="actStreet('store')"></div>
+            <div class="interactable ent-cafe" onclick="actStreet('cafe')"></div>
+            <div class="interactable ent-bus" onclick="actStreet('bus')"></div>
+        `;
+        renderVisualRoom('room-street', ents, 
+            "It's your day off. You have some cash in your pocket. The neighborhood is busy. You just want to feel normal today.", 
+            ""
+        );
+    }
+
+    function actStreet(target) {
+        if (target === 'store') {
+            if(state.mallVisited.store) {
+                setVisualDialogue("You already bought your groceries. Better not linger here.", `<button class="btn" onclick="loadStreet()">Step back</button>`);
+                return;
+            }
+            state.mallVisited.store = true;
+            let dialogue = "You go to buy some toiletries. You notice the security guard trailing you down two aisles. At the counter, the cashier holds your $10 bill to the light and checks it twice.";
+            
+            if (state.hasTattoos) {
+                dialogue += "<br><br>Your tattoos are visible. They are watching your hands closely.";
+            }
+
+            setVisualDialogue(dialogue,
+                `<button class="btn" onclick="updateStats(0,-10,0,-5); loadStreet();"><span class="color-bad">-10 Happy:</span> Keep your head down and leave.</button>
+                 <button class="btn" onclick="updateStats(0,-5,0,-15); loadStreet();"><span class="color-bad">-15 Trust:</span> Stare back angrily.</button>`
+            );
+        } 
+        else if (target === 'cafe') {
+            if(state.mallVisited.cafe) {
+                setVisualDialogue("You already got a coffee. It wasn't very relaxing.", `<button class="btn" onclick="loadStreet()">Step back</button>`);
+                return;
+            }
+            state.mallVisited.cafe = true;
+            
+            setVisualDialogue("You buy a coffee and sit at an empty table. A family is sitting next to you. The mother whispers to her husband, pulls her handbag closer to her chest, and they shift their chairs away from you.",
+                `<button class="btn" onclick="updateStats(0,-15,0,0); loadStreet();"><span class="color-bad">-15 Happy:</span> Leave your coffee and walk out.</button>
+                 <button class="btn" onclick="updateStats(0,-5,0,0); loadStreet();">Pretend you didn't notice.</button>`
+            );
+        }
+        else if (target === 'bus') {
+            setVisualDialogue("Are you ready to head home? Your throat is feeling a bit scratchy...",
+                `<button class="btn" onclick="loadFinancialCrisis()">Take the bus home</button>
+                 <button class="btn" onclick="loadStreet()">Stay a bit longer</button>`
+            );
+        }
+    }
+
+    /* =========================================================
+       4. PURE NARRATIVE SCENES (Deep Story & Crises)
+       ========================================================= */
+    function loadNarrative(title, text, choicesHTML) {
+        switchScene('scene-narrative');
+        document.getElementById('story-title').innerHTML = title;
+        document.getElementById('story-text').innerHTML = text;
+        document.getElementById('story-choices').innerHTML = choicesHTML;
+    }
+
+    // --- ACT 4: Financial Crisis ---
+    function loadFinancialCrisis() {
+        let btnHTML = "";
+        if (state.money >= 50) {
+            btnHTML += `<button class="btn" onclick="updateStats(-50,10,0,0); resolveCrisis('paid');">Pay $50 for the private clinic.</button>`;
+        } else {
+            btnHTML += `<button class="btn" disabled>Pay $50 for clinic (Not enough money)</button>`;
+        }
+        btnHTML += `<button class="btn" onclick="updateStats(-5,-25,0,-10); resolveCrisis('suffer');">Buy cheap painkillers and work sick.</button>
+                    <button class="btn" onclick="updateStats(0,-10,-30,0); resolveCrisis('loan');">Beg your family for a $50 loan.</button>`;
+
+        loadNarrative("Act 4: The Cost of Living", 
+            `You survived your first week of work, but life outside is expensive.<br><br>
+            On the bus ride home, you realize you have a terrible fever and a throbbing toothache. You don't have company medical benefits. The nearest clinic costs $50 cash.<br><br>
+            A single medical emergency can derail months of saving for an ex-offender. What do you do?`,
+            btnHTML
+        );
+    }
+
+    function resolveCrisis(choice) {
+        let txt = "";
+        if(choice === 'paid') txt = "You pay the $50. You feel physically better, but your wallet is frighteningly light. You'll be eating instant noodles this week.";
+        if(choice === 'suffer') txt = "You drag yourself to work sick. You make mistakes. Your manager yells at you. Your mental health plummets.";
+        if(choice === 'loan') txt = "Your family transfers the money, but the trust shatters. 'Are you back to your old habits?' they ask. They still see you as a burden.";
+
+        txt += `<div class="reflection-box"><strong>Reality Check:</strong> Financial instability is a massive driver of recidivism. Without a safety net, one bad day can ruin a second chance.</div>`;
+
+        loadNarrative("The Aftermath", txt, `<button class="btn" onclick="loadStigmaBranch()">Continue</button>`);
+    }
+
+    // --- ACT 5: Final Narrative Branching ---
+    function loadStigmaBranch() {
+        if (state.hasTattoos) {
+            // Maya & Marcus Path
+            loadNarrative("Act 5: The Final Hurdle",
+                `It's been a month. You are trying so hard. You are sitting at a neighborhood playground, wearing a t-shirt. Your tattoos are visible.<br><br>
+                A mother notices you. She grabs her child's hand, pulling them away with a look of pure disgust. "Don't play near that... person," she whispers loudly.<br><br>
+                You are treated like a threat just for existing. The exhaustion of constantly proving yourself is overwhelming.`,
+                `<button class="btn" onclick="updateStats(0,-10,-10,-20); finishStigma('anger');">Confront her angrily.</button>
+                 <button class="btn" onclick="updateStats(0,-5,15,10); finishStigma('calm');">Take a deep breath and ignore her.</button>`
+            );
+        } else {
+            // Sara Path (White collar)
+            loadNarrative("Act 5: The Invisible Stigma",
+                `It's been a month. You run into Chloe, an old university friend.<br><br>
+                "Sara! Where have you been? We should get the alumni network together!" she exclaims.<br><br>
+                She doesn't know about your conviction. If you tell her, the whole professional network will know and judge you. The fear of being 'found out' is exhausting.`,
+                `<button class="btn" onclick="updateStats(0,15,0,-20); finishStigma('honest');">Tell her the truth.</button>
+                 <button class="btn" onclick="updateStats(0,-20,0,0); finishStigma('lie');">Lie and say you were overseas.</button>`
+            );
+        }
+    }
+
+    function finishStigma(choice) {
+        if(choice === 'calm' || choice === 'honest') showToast("Resilience");
+        loadNarrative("Moving Forward", 
+            "The stigma stings. Reintegration isn't just about finding a job; it's about navigating a society that hasn't forgiven you yet. But you survived.",
+            `<button class="btn" onclick="loadFamilyReunion()">Continue</button>`
+        );
+    }
+
+    // --- ACT 6: Family Reconnection ---
+    function loadFamilyReunion() {
+        // Checks if the player has built up enough family trust throughout the game
+        if (state.famTrust >= 40) {
+            loadNarrative("Act 6: Rebuilding Bridges",
+                `It's a Sunday evening. Your phone buzzes with a message from your family: <em>"Mom made your favorite for dinner tonight. Come over?"</em><br><br>
+                When you arrive, it isn't perfect. There is still a bit of awkwardness, but the heavy judgment is gone. They ask about your work, and they genuinely listen. For the first time since your release, you don't feel like a burden or a risk.<br><br>
+                You realize that having a supportive family makes the harshness of the outside world bearable. You finally have a safe harbor.`,
+                `<button class="btn" onclick="updateStats(0,20,20,0); calculateEnding();">Accept the olive branch</button>`
+            );
+        } else {
+            loadNarrative("Act 6: The Empty Chair",
+                `It's a Sunday evening. You see families gathering at the coffee shop downstairs, laughing and eating together.<br><br>
+                You check your phone, but the screen is empty. Your family hasn't reached out. The trust is still broken, and the silence in your room is deafening. Rebuilding your life without a support system is a lonely, exhausting climb.`,
+                `<button class="btn" onclick="updateStats(0,-15,0,0); calculateEnding();">Keep moving forward alone</button>`
+            );
+        }
+    }
+
+    // --- ENDINGS ---
+    function calculateEnding() {
+        const score = state.happy + state.famTrust + state.comTrust;
+        let title, text, styleClass;
+
+        if (score >= 120 && state.famTrust >= 50) {
+            title = "Ending: Thriving & Reconnected";
+            styleClass = "color-good";
+            text = "Against all odds, you stabilized. You kept your job and managed the stigma, but your biggest victory was regaining your family's trust. With their unwavering support as your anchor, you successfully rebuilt your life. You've broken the cycle! You are now volunteering with the Yellow Ribbon Project to show others that true change is possible when you have a strong support system.";
+        } else if (score >= 60) {
+            title = "Ending: Barely Surviving";
+            styleClass = "color-neutral";
+            text = "You are out of prison, but you are isolated. You work, eat, and sleep. Without strong family support, the loneliness is heavy. You are free, but you are still serving a 'social sentence'. You survive, but you aren't truly living yet.";
+        } else {
+            title = "Ending: The Cycle Continues";
+            styleClass = "color-bad";
+            text = "The pressure was too much. The lack of money, the broken family trust, and the constant public judgment broke your spirit. Without a supportive family to fall back on, the temptation to return to your old life is overwhelming.";
+        }
+
+        let edu = `
+            <div class="reflection-box">
+                <h3 style="margin-top:0;">What You Can Do (Yellow Ribbon)</h3>
+                <ul style="font-size:20px; line-height:1.4;">
+                    <li><strong>Challenge Assumptions:</strong> Tattoos or a gap in a resume don't define a person's worth.</li>
+                    <li><strong>Be a Mentor:</strong> Support groups reduce recidivism drastically.</li>
+                    <li><strong>Advocate:</strong> Support Fair Hiring practices in Singapore.</li>
+                </ul>
+            </div>
+        `;
+
+        loadNarrative(`<span class="${styleClass}">${title}</span>`, text + edu, 
+            `<button class="btn" onclick="location.reload()">Play Again</button>`
+        );
+    }
+
+</script>
+</body>
+</html>
